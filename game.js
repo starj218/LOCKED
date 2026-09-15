@@ -4,6 +4,10 @@ import {
     PointerLockControls
 } from "three/addons/controls/PointerLockControls.js";
 
+import {
+    GLTFLoader
+} from "three/addons/loaders/GLTFLoader.js";
+
 
 // ========================================
 // 기본 설정
