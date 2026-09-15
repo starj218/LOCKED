@@ -1,7 +1,10 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
     <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>방탈출</title>
 
@@ -10,18 +13,37 @@
 
 <body>
 
+    <!-- 게임 화면 -->
     <div id="game"></div>
 
+    <!-- 가운데 조준점 -->
     <div id="crosshair">+</div>
 
+    <!-- 시작 안내 -->
+    <div id="startMessage">
+        화면을 클릭해서 게임 시작
+    </div>
+
+    <!-- 게임 설명 -->
     <div id="help">
-        클릭해서 게임 시작<br>
         WASD : 이동<br>
-        마우스 : 시점 이동<br>
+        마우스 : 주변 보기<br>
         ESC : 마우스 잠금 해제
     </div>
 
+    <!-- Three.js -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <!-- 게임 코드 -->
     <script type="module" src="game.js"></script>
 
 </body>
+
 </html>
