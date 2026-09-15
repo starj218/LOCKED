@@ -1,450 +1,497 @@
+import * as THREE from "three";
+
+import {
+    PointerLockControls
+} from "three/addons/controls/PointerLockControls.js";
+
+
+// ========================================
+// 기본 설정
+// ========================================
+
 const game = document.getElementById("game");
 
-// ========================
-// 게임 기본 설정
-// ========================
+const startMessage =
+    document.getElementById("startMessage");
 
-const WORLD_WIDTH = 2400;
-const WORLD_HEIGHT = 1800;
 
-const VIEW_WIDTH = 800;
-const VIEW_HEIGHT = 500;
+// ========================================
+// 3D 장면
+// ========================================
 
-// ========================
-// 게임 화면
-// ========================
+const scene = new THREE.Scene();
 
-game.innerHTML = `
-    <div id="world">
-        <div id="player"></div>
-        <div id="status">
-            🍀 행운: 0
-        </div>
-    </div>
-`;
+scene.background =
+    new THREE.Color(0x202020);
 
-const world = document.getElementById("world");
-const player = document.getElementById("player");
-const status = document.getElementById("status");
 
-// ========================
-// 플레이어
-// ========================
+// ========================================
+// 카메라
+// ========================================
 
-let playerX = WORLD_WIDTH / 2;
-let playerY = WORLD_HEIGHT / 2;
+const camera =
+    new THREE.PerspectiveCamera(
+        75,
+        window.innerWidth /
+        window.innerHeight,
+        0.1,
+        1000
+    );
 
-let velocityX = 0;
-let velocityY = 0;
 
-const NORMAL_SPEED = 5;
-let maxSpeed = NORMAL_SPEED;
+// 플레이어 눈높이
+camera.position.set(
+    0,
+    1.7,
+    5
+);
 
-const ACCELERATION = 0.35;
-const FRICTION = 0.82;
 
-// ========================
-// 아이템 관련
-// ========================
+// ========================================
+// 렌더러
+// ========================================
 
-let luck = 0;
-let shield = false;
+const renderer =
+    new THREE.WebGLRenderer({
+        antialias: true
+    });
 
-const ITEM_COUNT = 25;
+renderer.setSize(
+    window.innerWidth,
+    window.innerHeight
+);
 
-const itemTypes = [
-    {
-        name: "speed",
-        icon: "⚡",
-        color: "#f1c40f"
-    },
-    {
-        name: "shield",
-        icon: "🛡️",
-        color: "#3498db"
-    },
-    {
-        name: "luck",
-        icon: "🍀",
-        color: "#2ecc71"
-    },
-    {
-        name: "boost",
-        icon: "💨",
-        color: "#e67e22"
+renderer.setPixelRatio(
+    Math.min(
+        window.devicePixelRatio,
+        2
+    )
+);
+
+game.appendChild(
+    renderer.domElement
+);
+
+
+// ========================================
+// 조명
+// ========================================
+
+const ambientLight =
+    new THREE.AmbientLight(
+        0xffffff,
+        1.2
+    );
+
+scene.add(
+    ambientLight
+);
+
+
+const roomLight =
+    new THREE.PointLight(
+        0xffffff,
+        30,
+        30
+    );
+
+roomLight.position.set(
+    0,
+    3.5,
+    0
+);
+
+scene.add(
+    roomLight
+);
+
+
+// ========================================
+// 바닥
+// ========================================
+
+const floorGeometry =
+    new THREE.PlaneGeometry(
+        20,
+        20
+    );
+
+const floorMaterial =
+    new THREE.MeshStandardMaterial({
+        color: 0x555555
+    });
+
+const floor =
+    new THREE.Mesh(
+        floorGeometry,
+        floorMaterial
+    );
+
+floor.rotation.x =
+    -Math.PI / 2;
+
+scene.add(
+    floor
+);
+
+
+// ========================================
+// 벽 생성 함수
+// ========================================
+
+function createWall(
+    x,
+    y,
+    z,
+    width,
+    height,
+    depth
+) {
+
+    const geometry =
+        new THREE.BoxGeometry(
+            width,
+            height,
+            depth
+        );
+
+    const material =
+        new THREE.MeshStandardMaterial({
+            color: 0x777777
+        });
+
+    const wall =
+        new THREE.Mesh(
+            geometry,
+            material
+        );
+
+    wall.position.set(
+        x,
+        y,
+        z
+    );
+
+    scene.add(
+        wall
+    );
+}
+
+
+// ========================================
+// 방의 외벽
+// ========================================
+
+// 뒤쪽
+createWall(
+    0,
+    2,
+    -10,
+    20,
+    4,
+    0.5
+);
+
+
+// 앞쪽
+createWall(
+    0,
+    2,
+    10,
+    20,
+    4,
+    0.5
+);
+
+
+// 왼쪽
+createWall(
+    -10,
+    2,
+    0,
+    0.5,
+    4,
+    20
+);
+
+
+// 오른쪽
+createWall(
+    10,
+    2,
+    0,
+    0.5,
+    4,
+    20
+);
+
+
+// ========================================
+// 방 안의 장애물
+// ========================================
+
+createWall(
+    0,
+    1,
+    -3,
+    5,
+    2,
+    0.5
+);
+
+
+createWall(
+    -5,
+    1,
+    3,
+    0.5,
+    2,
+    5
+);
+
+
+// ========================================
+// 1인칭 조작
+// ========================================
+
+const controls =
+    new PointerLockControls(
+        camera,
+        document.body
+    );
+
+
+// 화면 클릭
+document.addEventListener(
+    "click",
+    () => {
+
+        controls.lock();
+
     }
-];
+);
 
-const items = [];
 
-// ========================
-// 장애물
-// ========================
+// 마우스 잠금 상태 변경
+controls.addEventListener(
+    "lock",
+    () => {
 
-const obstacles = [
-    { x: 300, y: 250, width: 220, height: 80 },
-    { x: 700, y: 500, width: 100, height: 250 },
-    { x: 1100, y: 250, width: 300, height: 70 },
-    { x: 1600, y: 400, width: 100, height: 300 },
-    { x: 1900, y: 850, width: 250, height: 100 },
-    { x: 1300, y: 1100, width: 300, height: 80 },
-    { x: 600, y: 1250, width: 100, height: 250 },
-    { x: 1800, y: 1400, width: 250, height: 80 }
-];
+        startMessage.style.display =
+            "none";
 
-// 장애물 생성
-obstacles.forEach((obstacle) => {
+    }
+);
 
-    const element = document.createElement("div");
 
-    element.className = "obstacle";
+controls.addEventListener(
+    "unlock",
+    () => {
 
-    element.style.left = obstacle.x + "px";
-    element.style.top = obstacle.y + "px";
-    element.style.width = obstacle.width + "px";
-    element.style.height = obstacle.height + "px";
+        startMessage.style.display =
+            "block";
 
-    world.appendChild(element);
-});
+    }
+);
 
-// ========================
+
+// ========================================
 // 키 입력
-// ========================
+// ========================================
 
 const keys = {};
 
-document.addEventListener("keydown", (event) => {
-    keys[event.key.toLowerCase()] = true;
-});
 
-document.addEventListener("keyup", (event) => {
-    keys[event.key.toLowerCase()] = false;
-});
+// 키를 누름
+document.addEventListener(
+    "keydown",
+    (event) => {
 
-// ========================
-// 충돌 검사
-// ========================
+        keys[
+            event.key.toLowerCase()
+        ] = true;
 
-function isColliding(x, y) {
-
-    const playerSize = 30;
-
-    for (const obstacle of obstacles) {
-
-        if (
-            x < obstacle.x + obstacle.width &&
-            x + playerSize > obstacle.x &&
-            y < obstacle.y + obstacle.height &&
-            y + playerSize > obstacle.y
-        ) {
-            return true;
-        }
     }
+);
 
-    return false;
-}
 
-// ========================
-// 아이템 위치가 안전한지 검사
-// ========================
+// 키를 뗌
+document.addEventListener(
+    "keyup",
+    (event) => {
 
-function isSafeItemPosition(x, y) {
+        keys[
+            event.key.toLowerCase()
+        ] = false;
 
-    const itemSize = 24;
-
-    // 장애물과 겹치는지 확인
-    for (const obstacle of obstacles) {
-
-        if (
-            x < obstacle.x + obstacle.width &&
-            x + itemSize > obstacle.x &&
-            y < obstacle.y + obstacle.height &&
-            y + itemSize > obstacle.y
-        ) {
-            return false;
-        }
     }
+);
 
-    return true;
-}
 
-// ========================
-// 랜덤 숫자
-// ========================
-
-function randomNumber(min, max) {
-    return Math.random() * (max - min) + min;
-}
-
-// ========================
-// 아이템 생성
-// ========================
-
-function createItem() {
-
-    let x;
-    let y;
-
-    // 안전한 위치가 나올 때까지 다시 뽑기
-    do {
-        x = randomNumber(20, WORLD_WIDTH - 44);
-        y = randomNumber(20, WORLD_HEIGHT - 44);
-    } while (!isSafeItemPosition(x, y));
-
-    // 랜덤 아이템 종류
-    const type =
-        itemTypes[Math.floor(Math.random() * itemTypes.length)];
-
-    const element = document.createElement("div");
-
-    element.className = "item";
-    element.textContent = type.icon;
-
-    element.style.left = x + "px";
-    element.style.top = y + "px";
-
-    element.style.backgroundColor = type.color;
-
-    world.appendChild(element);
-
-    const item = {
-        x: x,
-        y: y,
-        width: 24,
-        height: 24,
-        type: type.name,
-        element: element
-    };
-
-    items.push(item);
-}
-
-// 처음에 아이템 25개 생성
-for (let i = 0; i < ITEM_COUNT; i++) {
-    createItem();
-}
-
-// ========================
-// 아이템 획득 검사
-// ========================
-
-function checkItems() {
-
-    const playerSize = 30;
-
-    for (let i = items.length - 1; i >= 0; i--) {
-
-        const item = items[i];
-
-        if (
-            playerX < item.x + item.width &&
-            playerX + playerSize > item.x &&
-            playerY < item.y + item.height &&
-            playerY + playerSize > item.y
-        ) {
-
-            collectItem(item, i);
-        }
-    }
-}
-
-// ========================
-// 아이템 효과
-// ========================
-
-function collectItem(item, index) {
-
-    // 화면에서 삭제
-    item.element.remove();
-
-    // 배열에서 삭제
-    items.splice(index, 1);
-
-    // 아이템 효과
-    if (item.type === "speed") {
-
-        maxSpeed = 8;
-
-        setTimeout(() => {
-            maxSpeed = NORMAL_SPEED;
-        }, 5000);
-    }
-
-    else if (item.type === "shield") {
-
-        shield = true;
-
-        player.classList.add("shield");
-
-        setTimeout(() => {
-            shield = false;
-            player.classList.remove("shield");
-        }, 10000);
-    }
-
-    else if (item.type === "luck") {
-
-        luck += 1;
-
-        status.textContent =
-            "🍀 행운: " + luck;
-    }
-
-    else if (item.type === "boost") {
-
-        velocityX *= 2;
-        velocityY *= 2;
-    }
-
-    // 3초 후 새로운 아이템 생성
-    setTimeout(() => {
-        createItem();
-    }, 3000);
-}
-
-// ========================
+// ========================================
 // 플레이어 이동
-// ========================
+// ========================================
 
-function movePlayer() {
+const speed = 4;
 
-    let inputX = 0;
-    let inputY = 0;
+const clock =
+    new THREE.Clock();
 
-    if (keys["w"] || keys["arrowup"]) {
-        inputY -= 1;
+
+function movePlayer(delta) {
+
+    let forward = 0;
+    let right = 0;
+
+
+    // 앞으로
+    if (keys["w"]) {
+
+        forward += 1;
+
     }
 
-    if (keys["s"] || keys["arrowdown"]) {
-        inputY += 1;
+
+    // 뒤로
+    if (keys["s"]) {
+
+        forward -= 1;
+
     }
 
-    if (keys["a"] || keys["arrowleft"]) {
-        inputX -= 1;
+
+    // 왼쪽
+    if (keys["a"]) {
+
+        right -= 1;
+
     }
 
-    if (keys["d"] || keys["arrowright"]) {
-        inputX += 1;
+
+    // 오른쪽
+    if (keys["d"]) {
+
+        right += 1;
+
     }
+
 
     // 대각선 속도 보정
-    if (inputX !== 0 && inputY !== 0) {
+    if (
+        forward !== 0 &&
+        right !== 0
+    ) {
 
         const length =
-            Math.sqrt(inputX * inputX + inputY * inputY);
+            Math.sqrt(
+                forward * forward +
+                right * right
+            );
 
-        inputX /= length;
-        inputY /= length;
+        forward /= length;
+        right /= length;
+
     }
 
-    // 가속
-    velocityX += inputX * ACCELERATION;
-    velocityY += inputY * ACCELERATION;
 
-    // 최대 속도 제한
-    const velocityLength =
-        Math.sqrt(
-            velocityX * velocityX +
-            velocityY * velocityY
+    const moveSpeed =
+        speed * delta;
+
+
+    // 앞뒤 이동
+    if (forward !== 0) {
+
+        controls.moveForward(
+            forward * moveSpeed
         );
 
-    if (velocityLength > maxSpeed) {
-
-        velocityX =
-            (velocityX / velocityLength) * maxSpeed;
-
-        velocityY =
-            (velocityY / velocityLength) * maxSpeed;
     }
 
-    // 마찰
-    if (inputX === 0) {
-        velocityX *= FRICTION;
+
+    // 좌우 이동
+    if (right !== 0) {
+
+        controls.moveRight(
+            right * moveSpeed
+        );
+
     }
 
-    if (inputY === 0) {
-        velocityY *= FRICTION;
-    }
 
-    // X축 이동
-    const nextX = playerX + velocityX;
+    // 플레이어가 방 밖으로 나가지 않게
+    camera.position.x =
+        THREE.MathUtils.clamp(
+            camera.position.x,
+            -9,
+            9
+        );
 
-    if (
-        nextX >= 0 &&
-        nextX <= WORLD_WIDTH - 30 &&
-        !isColliding(nextX, playerY)
-    ) {
-        playerX = nextX;
-    }
-    else {
-        velocityX = 0;
-    }
 
-    // Y축 이동
-    const nextY = playerY + velocityY;
+    camera.position.z =
+        THREE.MathUtils.clamp(
+            camera.position.z,
+            -9,
+            9
+        );
 
-    if (
-        nextY >= 0 &&
-        nextY <= WORLD_HEIGHT - 30 &&
-        !isColliding(playerX, nextY)
-    ) {
-        playerY = nextY;
-    }
-    else {
-        velocityY = 0;
-    }
 }
 
-// ========================
-// 카메라
-// ========================
 
-function updateCamera() {
+// ========================================
+// 화면 크기 변경
+// ========================================
 
-    let cameraX =
-        playerX - VIEW_WIDTH / 2 + 15;
+window.addEventListener(
+    "resize",
+    () => {
 
-    let cameraY =
-        playerY - VIEW_HEIGHT / 2 + 15;
+        camera.aspect =
+            window.innerWidth /
+            window.innerHeight;
 
-    cameraX = Math.max(
-        0,
-        Math.min(cameraX, WORLD_WIDTH - VIEW_WIDTH)
-    );
+        camera.updateProjectionMatrix();
 
-    cameraY = Math.max(
-        0,
-        Math.min(cameraY, WORLD_HEIGHT - VIEW_HEIGHT)
-    );
 
-    world.style.transform =
-        `translate(${-cameraX}px, ${-cameraY}px)`;
-}
+        renderer.setSize(
+            window.innerWidth,
+            window.innerHeight
+        );
 
-// ========================
-// 플레이어 위치
-// ========================
+    }
+);
 
-function updatePlayer() {
 
-    player.style.left = playerX + "px";
-    player.style.top = playerY + "px";
-}
-
-// ========================
+// ========================================
 // 게임 루프
-// ========================
+// ========================================
 
 function gameLoop() {
 
-    movePlayer();
-    updatePlayer();
-    checkItems();
-    updateCamera();
+    const delta =
+        Math.min(
+            clock.getDelta(),
+            0.05
+        );
 
-    requestAnimationFrame(gameLoop);
+
+    if (controls.isLocked) {
+
+        movePlayer(delta);
+
+    }
+
+
+    renderer.render(
+        scene,
+        camera
+    );
+
+
+    requestAnimationFrame(
+        gameLoop
+    );
+
 }
 
-updatePlayer();
-updateCamera();
+
 gameLoop();
