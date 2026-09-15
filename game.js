@@ -109,148 +109,51 @@ scene.add(
     roomLight
 );
 
-
 // ========================================
-// 바닥
-// ========================================
-
-const floorGeometry =
-    new THREE.PlaneGeometry(
-        20,
-        20
-    );
-
-const floorMaterial =
-    new THREE.MeshStandardMaterial({
-        color: 0x555555
-    });
-
-const floor =
-    new THREE.Mesh(
-        floorGeometry,
-        floorMaterial
-    );
-
-floor.rotation.x =
-    -Math.PI / 2;
-
-scene.add(
-    floor
-);
-
-
-// ========================================
-// 벽 생성 함수
+// 3D 방 모델 불러오기
 // ========================================
 
-function createWall(
-    x,
-    y,
-    z,
-    width,
-    height,
-    depth
-) {
+const loader = new GLTFLoader();
 
-    const geometry =
-        new THREE.BoxGeometry(
-            width,
-            height,
-            depth
+loader.load(
+    "models/room.glb",
+
+    (gltf) => {
+
+        const room = gltf.scene;
+
+        // 방 크기
+        room.scale.set(
+            1,
+            1,
+            1
         );
 
-    const material =
-        new THREE.MeshStandardMaterial({
-            color: 0x777777
-        });
-
-    const wall =
-        new THREE.Mesh(
-            geometry,
-            material
+        // 방 위치
+        room.position.set(
+            0,
+            0,
+            0
         );
 
-    wall.position.set(
-        x,
-        y,
-        z
-    );
+        scene.add(room);
 
-    scene.add(
-        wall
-    );
-}
+        console.log(
+            "방 모델 불러오기 완료!"
+        );
 
+    },
 
-// ========================================
-// 방의 외벽
-// ========================================
+    undefined,
 
-// 뒤쪽
-createWall(
-    0,
-    2,
-    -10,
-    20,
-    4,
-    0.5
-);
+    (error) => {
 
+        console.error(
+            "방 모델을 불러오지 못했습니다.",
+            error
+        );
 
-// 앞쪽
-createWall(
-    0,
-    2,
-    10,
-    20,
-    4,
-    0.5
-);
-
-
-// 왼쪽
-createWall(
-    -10,
-    2,
-    0,
-    0.5,
-    4,
-    20
-);
-
-
-// 오른쪽
-createWall(
-    10,
-    2,
-    0,
-    0.5,
-    4,
-    20
-);
-
-
-// ========================================
-// 방 안의 장애물
-// ========================================
-
-createWall(
-    0,
-    1,
-    -3,
-    5,
-    2,
-    0.5
-);
-
-
-createWall(
-    -5,
-    1,
-    3,
-    0.5,
-    2,
-    5
+    }
 );
 
 
