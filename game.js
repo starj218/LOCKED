@@ -136,8 +136,7 @@ scene.add(
 const loader = new GLTFLoader();
 
 loader.load(
-
-    "models/room.glb",
+    "room.glb",
 
     // ====================================
     // 성공
