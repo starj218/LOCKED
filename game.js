@@ -26,7 +26,7 @@ const startMessage = document.getElementById("startMessage");
 
 
 // ========================================
-// 3D 장면
+// 장면
 // ========================================
 
 const scene = new THREE.Scene();
@@ -48,7 +48,7 @@ const camera = new THREE.PerspectiveCamera(
 camera.position.set(
     0,
     1.7,
-    5
+    0
 );
 
 
@@ -106,17 +106,55 @@ scene.add(
 
 
 // ========================================
-// 충돌용 Octree
+// 충돌 시스템
 // ========================================
 
 const worldOctree = new Octree();
 
 
 // ========================================
-// 플레이어 설정
+// 임시 테스트 바닥
+// ========================================
+
+const testFloor = new THREE.Mesh(
+    new THREE.BoxGeometry(
+        30,
+        0.2,
+        30
+    ),
+
+    new THREE.MeshStandardMaterial({
+        color: 0x555555
+    })
+);
+
+testFloor.position.set(
+    0,
+    0,
+    0
+);
+
+scene.add(
+    testFloor
+);
+
+
+// 바닥을 충돌 데이터에 추가
+worldOctree.fromGraphNode(
+    testFloor
+);
+
+console.log(
+    "임시 바닥 충돌 생성 완료!"
+);
+
+
+// ========================================
+// 플레이어
 // ========================================
 
 const playerCollider = new Capsule(
+
     new THREE.Vector3(
         0,
         0.35,
@@ -130,9 +168,13 @@ const playerCollider = new Capsule(
     ),
 
     0.35
+
 );
+
+
 // 플레이어 속도
-const playerVelocity = new THREE.Vector3();
+const playerVelocity =
+    new THREE.Vector3();
 
 
 // 바닥에 있는지
@@ -155,10 +197,11 @@ const jumpSpeed = 10;
 // 1인칭 조작
 // ========================================
 
-const controls = new PointerLockControls(
-    camera,
-    document.body
-);
+const controls =
+    new PointerLockControls(
+        camera,
+        document.body
+    );
 
 
 // 화면 클릭
@@ -229,7 +272,7 @@ document.addEventListener(
         ] = true;
 
 
-        // Space = 점프
+        // SPACE 점프
         if (
             event.code === "Space" &&
             playerOnFloor
@@ -238,7 +281,12 @@ document.addEventListener(
             playerVelocity.y =
                 jumpSpeed;
 
-            playerOnFloor = false;
+            playerOnFloor =
+                false;
+
+            console.log(
+                "점프!"
+            );
 
         }
 
@@ -260,10 +308,11 @@ document.addEventListener(
 
 
 // ========================================
-// 3D 방 모델
+// 방 모델
 // ========================================
 
-const loader = new GLTFLoader();
+const loader =
+    new GLTFLoader();
 
 
 loader.load(
@@ -272,12 +321,13 @@ loader.load(
 
 
     // ====================================
-    // 모델 로딩 성공
+    // 로딩 성공
     // ====================================
 
     (gltf) => {
 
-        const room = gltf.scene;
+        const room =
+            gltf.scene;
 
 
         console.log(
@@ -286,16 +336,19 @@ loader.load(
 
 
         // --------------------------------
-        // 모델 크기 확인
+        // 원래 크기 확인
         // --------------------------------
 
         const originalBox =
             new THREE.Box3()
-                .setFromObject(room);
+                .setFromObject(
+                    room
+                );
 
 
         const originalSize =
             new THREE.Vector3();
+
 
         originalBox.getSize(
             originalSize
@@ -311,7 +364,7 @@ loader.load(
 
 
         // --------------------------------
-        // 너무 큰 모델만 자동 축소
+        // 너무 큰 모델 축소
         // --------------------------------
 
         const maxSize =
@@ -322,10 +375,13 @@ loader.load(
             );
 
 
-        if (maxSize > 30) {
+        if (
+            maxSize > 30
+        ) {
 
             const scale =
                 20 / maxSize;
+
 
             room.scale.set(
                 scale,
@@ -336,26 +392,25 @@ loader.load(
         }
 
 
-        // --------------------------------
-        // 월드 좌표 갱신
-        // --------------------------------
-
         room.updateMatrixWorld(
             true
         );
 
 
         // --------------------------------
-        // 방의 중심 계산
+        // 중심 계산
         // --------------------------------
 
         const box =
             new THREE.Box3()
-                .setFromObject(room);
+                .setFromObject(
+                    room
+                );
 
 
         const center =
             new THREE.Vector3();
+
 
         box.getCenter(
             center
@@ -363,17 +418,17 @@ loader.load(
 
 
         // --------------------------------
-        // 방을 중앙에 배치
+        // 방 중앙 배치
         // --------------------------------
 
         room.position.x -=
             center.x;
 
+
         room.position.z -=
             center.z;
 
 
-        // 월드 좌표 다시 갱신
         room.updateMatrixWorld(
             true
         );
@@ -385,7 +440,9 @@ loader.load(
 
         const floorBox =
             new THREE.Box3()
-                .setFromObject(room);
+                .setFromObject(
+                    room
+                );
 
 
         room.position.y -=
@@ -398,7 +455,7 @@ loader.load(
 
 
         // --------------------------------
-        // 장면에 방 추가
+        // 방 추가
         // --------------------------------
 
         scene.add(
@@ -406,8 +463,13 @@ loader.load(
         );
 
 
+        console.log(
+            "방 모델 장면 추가 완료!"
+        );
+
+
         // --------------------------------
-        // 충돌 데이터 생성
+        // 방 충돌 생성
         // --------------------------------
 
         try {
@@ -416,8 +478,9 @@ loader.load(
                 room
             );
 
+
             console.log(
-                "충돌 데이터 생성 완료!"
+                "방 충돌 데이터 생성 완료!"
             );
 
         }
@@ -425,7 +488,7 @@ loader.load(
         catch (error) {
 
             console.error(
-                "충돌 데이터 생성 실패:",
+                "방 충돌 생성 실패:",
                 error
             );
 
@@ -433,16 +496,19 @@ loader.load(
 
 
         // --------------------------------
-        // 모델 정보 출력
+        // 최종 크기
         // --------------------------------
 
         const finalBox =
             new THREE.Box3()
-                .setFromObject(room);
+                .setFromObject(
+                    room
+                );
 
 
         const finalSize =
             new THREE.Vector3();
+
 
         finalBox.getSize(
             finalSize
@@ -456,16 +522,11 @@ loader.load(
             finalSize.z
         );
 
-
-        console.log(
-            "방 모델 준비 완료!"
-        );
-
     },
 
 
     // ====================================
-    // 로딩 진행률
+    // 로딩 진행
     // ====================================
 
     (progress) => {
@@ -478,6 +539,7 @@ loader.load(
                 progress.loaded /
                 progress.total *
                 100;
+
 
             console.log(
                 "방 로딩:",
@@ -496,7 +558,7 @@ loader.load(
     (error) => {
 
         console.error(
-            "방 모델을 불러오지 못했습니다."
+            "room.glb 로딩 실패!"
         );
 
         console.error(
@@ -509,7 +571,7 @@ loader.load(
 
 
 // ========================================
-// 이동 방향 계산
+// 이동 방향
 // ========================================
 
 const direction =
@@ -525,7 +587,6 @@ function getMovementDirection() {
     );
 
 
-    // W
     if (keys["w"]) {
 
         direction.z -= 1;
@@ -533,7 +594,6 @@ function getMovementDirection() {
     }
 
 
-    // S
     if (keys["s"]) {
 
         direction.z += 1;
@@ -541,7 +601,6 @@ function getMovementDirection() {
     }
 
 
-    // A
     if (keys["a"]) {
 
         direction.x -= 1;
@@ -549,7 +608,6 @@ function getMovementDirection() {
     }
 
 
-    // D
     if (keys["d"]) {
 
         direction.x += 1;
@@ -570,7 +628,7 @@ function getMovementDirection() {
 
 
 // ========================================
-// 플레이어 이동
+// 플레이어 업데이트
 // ========================================
 
 function updatePlayer(delta) {
@@ -584,30 +642,45 @@ function updatePlayer(delta) {
     }
 
 
+    // --------------------------------
     // 이동 방향
+    // --------------------------------
+
     getMovementDirection();
 
 
     // --------------------------------
-    // 카메라 방향 기준으로 이동
+    // 카메라 앞 방향
     // --------------------------------
 
     const forward =
         new THREE.Vector3();
+
 
     camera.getWorldDirection(
         forward
     );
 
 
-    // 위아래 방향 제거
     forward.y = 0;
 
-    forward.normalize();
 
+    if (
+        forward.lengthSq() > 0
+    ) {
+
+        forward.normalize();
+
+    }
+
+
+    // --------------------------------
+    // 오른쪽 방향
+    // --------------------------------
 
     const right =
         new THREE.Vector3();
+
 
     right.crossVectors(
         forward,
@@ -619,8 +692,11 @@ function updatePlayer(delta) {
     );
 
 
+    right.normalize();
+
+
     // --------------------------------
-    // 이동 벡터
+    // 실제 이동
     // --------------------------------
 
     const move =
@@ -645,8 +721,10 @@ function updatePlayer(delta) {
 
         move.normalize();
 
+
         playerVelocity.x =
             move.x * playerSpeed;
+
 
         playerVelocity.z =
             move.z * playerSpeed;
@@ -655,10 +733,13 @@ function updatePlayer(delta) {
 
     else {
 
-        // 멈출 때 부드럽게 정지
-        playerVelocity.x *= 0.8;
+        // 멈출 때 감속
+        playerVelocity.x *=
+            0.8;
 
-        playerVelocity.z *= 0.8;
+
+        playerVelocity.z *=
+            0.8;
 
     }
 
@@ -675,14 +756,19 @@ function updatePlayer(delta) {
     // 플레이어 이동
     // --------------------------------
 
+    const deltaVelocity =
+        playerVelocity
+            .clone()
+            .multiplyScalar(delta);
+
+
     playerCollider.translate(
-        playerVelocity.clone()
-            .multiplyScalar(delta)
+        deltaVelocity
     );
 
 
     // --------------------------------
-    // 방과 충돌 검사
+    // 충돌
     // --------------------------------
 
     const result =
@@ -691,7 +777,8 @@ function updatePlayer(delta) {
         );
 
 
-    playerOnFloor = false;
+    playerOnFloor =
+        false;
 
 
     if (result) {
@@ -701,39 +788,40 @@ function updatePlayer(delta) {
 
 
         // 충돌한 만큼 밀어내기
+        playerCollider.translate(
+            result.normal
+                .multiplyScalar(
+                    result.depth
+                )
+        );
+
+
+        // 바닥
         if (
-            result.depth >= 0
+            playerOnFloor
         ) {
 
-            playerCollider.translate(
-                result.normal
-                    .multiplyScalar(
-                        result.depth
-                    )
-            );
+            if (
+                playerVelocity.y < 0
+            ) {
+
+                playerVelocity.y = 0;
+
+            }
 
         }
 
 
-        // 바닥에 닿았으면 아래쪽 속도 제거
-        if (
-            playerOnFloor &&
-            playerVelocity.y < 0
-        ) {
+        // 벽
+        else {
 
-            playerVelocity.y = 0;
+            const normal =
+                result.normal;
 
-        }
-
-
-        // 벽에 부딪혔을 때
-        if (
-            !playerOnFloor
-        ) {
 
             playerVelocity.addScaledVector(
-                result.normal,
-                -result.normal.dot(
+                normal,
+                -normal.dot(
                     playerVelocity
                 )
             );
@@ -744,7 +832,16 @@ function updatePlayer(delta) {
 
 
     // --------------------------------
-    // 플레이어가 너무 아래로 떨어졌을 때
+    // 카메라
+    // --------------------------------
+
+    camera.position.copy(
+        playerCollider.end
+    );
+
+
+    // --------------------------------
+    // 혹시 떨어졌다면 복귀
     // --------------------------------
 
     if (
@@ -752,22 +849,23 @@ function updatePlayer(delta) {
     ) {
 
         console.log(
-            "플레이어가 방 밖으로 떨어졌습니다."
+            "플레이어 리셋!"
         );
 
 
-        // 시작 위치로 복귀
-playerCollider.start.set(
-    0,
-    0.35,
-    0
-);
+        playerCollider.start.set(
+            0,
+            0.35,
+            0
+        );
 
-playerCollider.end.set(
-    0,
-    1.7,
-    0
-);
+
+        playerCollider.end.set(
+            0,
+            1.7,
+            0
+        );
+
 
         playerVelocity.set(
             0,
@@ -775,16 +873,16 @@ playerCollider.end.set(
             0
         );
 
+
+        playerOnFloor =
+            false;
+
+
+        camera.position.copy(
+            playerCollider.end
+        );
+
     }
-
-
-    // --------------------------------
-    // 카메라 위치
-    // --------------------------------
-
-    camera.position.copy(
-        playerCollider.end
-    );
 
 }
 
@@ -838,6 +936,7 @@ window.addEventListener(
         camera.aspect =
             window.innerWidth /
             window.innerHeight;
+
 
         camera.updateProjectionMatrix();
 
