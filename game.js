@@ -83,9 +83,7 @@ const ambientLight = new THREE.AmbientLight(
     2
 );
 
-scene.add(
-    ambientLight
-);
+scene.add(ambientLight);
 
 
 const roomLight = new THREE.PointLight(
@@ -100,9 +98,7 @@ roomLight.position.set(
     0
 );
 
-scene.add(
-    roomLight
-);
+scene.add(roomLight);
 
 
 // ========================================
@@ -113,7 +109,7 @@ const worldOctree = new Octree();
 
 
 // ========================================
-// 임시 테스트 바닥
+// 테스트용 바닥
 // ========================================
 
 const testFloor = new THREE.Mesh(
@@ -122,7 +118,6 @@ const testFloor = new THREE.Mesh(
         0.2,
         30
     ),
-
     new THREE.MeshStandardMaterial({
         color: 0x555555
     })
@@ -134,18 +129,10 @@ testFloor.position.set(
     0
 );
 
-scene.add(
-    testFloor
-);
+scene.add(testFloor);
 
-
-// 바닥을 충돌 데이터에 추가
 worldOctree.fromGraphNode(
     testFloor
-);
-
-console.log(
-    "임시 바닥 충돌 생성 완료!"
 );
 
 
@@ -168,28 +155,20 @@ const playerCollider = new Capsule(
     ),
 
     0.35
-
 );
 
 
-// 플레이어 속도
 const playerVelocity =
     new THREE.Vector3();
 
 
-// 바닥에 있는지
 let playerOnFloor = false;
 
 
-// 중력
 const gravity = 30;
 
-
-// 이동 속도
 const playerSpeed = 5;
 
-
-// 점프 힘
 const jumpSpeed = 10;
 
 
@@ -204,52 +183,40 @@ const controls =
     );
 
 
-// 화면 클릭
+// 화면 클릭 → 게임 시작
 document.addEventListener(
     "click",
     () => {
 
-        controls.lock();
+        if (!controls.isLocked) {
+            controls.lock();
+        }
 
     }
 );
 
 
-// 게임 시작
 controls.addEventListener(
     "lock",
     () => {
 
         if (startMessage) {
-
             startMessage.style.display =
                 "none";
-
         }
-
-        console.log(
-            "게임 시작!"
-        );
 
     }
 );
 
 
-// 게임 일시정지
 controls.addEventListener(
     "unlock",
     () => {
 
         if (startMessage) {
-
             startMessage.style.display =
                 "block";
-
         }
-
-        console.log(
-            "게임 일시정지"
-        );
 
     }
 );
@@ -272,7 +239,7 @@ document.addEventListener(
         ] = true;
 
 
-        // SPACE 점프
+        // SPACE = 점프
         if (
             event.code === "Space" &&
             playerOnFloor
@@ -284,9 +251,17 @@ document.addEventListener(
             playerOnFloor =
                 false;
 
-            console.log(
-                "점프!"
-            );
+            console.log("점프!");
+
+        }
+
+
+        // E = 상호작용
+        if (
+            event.key.toLowerCase() === "e"
+        ) {
+
+            interact();
 
         }
 
@@ -315,18 +290,16 @@ const loader =
     new GLTFLoader();
 
 
+let room = null;
+
+
 loader.load(
 
     "room.glb",
 
-
-    // ====================================
-    // 로딩 성공
-    // ====================================
-
     (gltf) => {
 
-        const room =
+        room =
             gltf.scene;
 
 
@@ -336,7 +309,7 @@ loader.load(
 
 
         // --------------------------------
-        // 원래 크기 확인
+        // 원래 크기
         // --------------------------------
 
         const originalBox =
@@ -398,7 +371,7 @@ loader.load(
 
 
         // --------------------------------
-        // 중심 계산
+        // 중앙 정렬
         // --------------------------------
 
         const box =
@@ -417,10 +390,6 @@ loader.load(
         );
 
 
-        // --------------------------------
-        // 방 중앙 배치
-        // --------------------------------
-
         room.position.x -=
             center.x;
 
@@ -435,7 +404,7 @@ loader.load(
 
 
         // --------------------------------
-        // 방 바닥을 y=0에 맞춤
+        // 바닥 정렬
         // --------------------------------
 
         const floorBox =
@@ -463,13 +432,8 @@ loader.load(
         );
 
 
-        console.log(
-            "방 모델 장면 추가 완료!"
-        );
-
-
         // --------------------------------
-        // 방 충돌 생성
+        // 방 충돌
         // --------------------------------
 
         try {
@@ -477,7 +441,6 @@ loader.load(
             worldOctree.fromGraphNode(
                 room
             );
-
 
             console.log(
                 "방 충돌 데이터 생성 완료!"
@@ -495,39 +458,12 @@ loader.load(
         }
 
 
-        // --------------------------------
-        // 최종 크기
-        // --------------------------------
-
-        const finalBox =
-            new THREE.Box3()
-                .setFromObject(
-                    room
-                );
-
-
-        const finalSize =
-            new THREE.Vector3();
-
-
-        finalBox.getSize(
-            finalSize
-        );
-
-
         console.log(
-            "최종 방 크기:",
-            finalSize.x,
-            finalSize.y,
-            finalSize.z
+            "방 준비 완료!"
         );
 
     },
 
-
-    // ====================================
-    // 로딩 진행
-    // ====================================
 
     (progress) => {
 
@@ -551,10 +487,6 @@ loader.load(
     },
 
 
-    // ====================================
-    // 로딩 실패
-    // ====================================
-
     (error) => {
 
         console.error(
@@ -568,6 +500,254 @@ loader.load(
     }
 
 );
+
+
+// ========================================
+// E키 상호작용 시스템
+// ========================================
+
+// 레이캐스터
+const raycaster =
+    new THREE.Raycaster();
+
+
+// 상호작용 가능한 최대 거리
+const interactDistance = 4;
+
+
+// 조사 메시지
+let interactionMessage =
+    document.getElementById(
+        "interactionMessage"
+    );
+
+
+// 메시지가 없다면 자동 생성
+if (!interactionMessage) {
+
+    interactionMessage =
+        document.createElement(
+            "div"
+        );
+
+
+    interactionMessage.id =
+        "interactionMessage";
+
+
+    interactionMessage.style.position =
+        "fixed";
+
+
+    interactionMessage.style.left =
+        "50%";
+
+
+    interactionMessage.style.top =
+        "75%";
+
+
+    interactionMessage.style.transform =
+        "translate(-50%, -50%)";
+
+
+    interactionMessage.style.padding =
+        "15px 25px";
+
+
+    interactionMessage.style.background =
+        "rgba(0, 0, 0, 0.8)";
+
+
+    interactionMessage.style.color =
+        "white";
+
+
+    interactionMessage.style.fontSize =
+        "18px";
+
+
+    interactionMessage.style.borderRadius =
+        "10px";
+
+
+    interactionMessage.style.display =
+        "none";
+
+
+    interactionMessage.style.zIndex =
+        "100";
+
+
+    interactionMessage.style.textAlign =
+        "center";
+
+
+    document.body.appendChild(
+        interactionMessage
+    );
+
+}
+
+
+// ========================================
+// 바라보고 있는 물체 찾기
+// ========================================
+
+function getInteractObject() {
+
+    if (!room) {
+        return null;
+    }
+
+
+    // 화면 중앙에서 레이 발사
+    raycaster.setFromCamera(
+        new THREE.Vector2(0, 0),
+        camera
+    );
+
+
+    const objects =
+        raycaster.intersectObjects(
+            room.children,
+            true
+        );
+
+
+    for (
+        const hit of objects
+    ) {
+
+        if (
+            hit.distance <=
+            interactDistance
+        ) {
+
+            return hit;
+
+        }
+
+    }
+
+
+    return null;
+
+}
+
+
+// ========================================
+// 물체 조사
+// ========================================
+
+function interact() {
+
+    const hit =
+        getInteractObject();
+
+
+    if (!hit) {
+
+        showInteractionMessage(
+            "조사할 수 있는 물체가 없습니다."
+        );
+
+        return;
+
+    }
+
+
+    // 가장 가까운 부모 이름 찾기
+    let object =
+        hit.object;
+
+
+    let objectName =
+        object.name;
+
+
+    while (
+        object.parent &&
+        object.parent !== room
+    ) {
+
+        if (
+            object.parent.name
+        ) {
+
+            objectName =
+                object.parent.name;
+
+        }
+
+
+        object =
+            object.parent;
+
+    }
+
+
+    // 이름이 없을 경우
+    if (
+        !objectName
+    ) {
+
+        objectName =
+            "알 수 없는 물체";
+
+    }
+
+
+    console.log(
+        "조사:",
+        objectName
+    );
+
+
+    showInteractionMessage(
+        "🔎 " + objectName
+    );
+
+}
+
+
+// ========================================
+// 조사 메시지 표시
+// ========================================
+
+let messageTimer = null;
+
+
+function showInteractionMessage(
+    text
+) {
+
+    interactionMessage.textContent =
+        text;
+
+
+    interactionMessage.style.display =
+        "block";
+
+
+    clearTimeout(
+        messageTimer
+    );
+
+
+    messageTimer =
+        setTimeout(
+            () => {
+
+                interactionMessage.style.display =
+                    "none";
+
+            },
+
+            2500
+        );
+
+}
 
 
 // ========================================
@@ -588,34 +768,25 @@ function getMovementDirection() {
 
 
     if (keys["w"]) {
-
         direction.z -= 1;
-
     }
 
 
     if (keys["s"]) {
-
         direction.z += 1;
-
     }
 
 
     if (keys["a"]) {
-
         direction.x -= 1;
-
     }
 
 
     if (keys["d"]) {
-
         direction.x += 1;
-
     }
 
 
-    // 대각선 속도 보정
     if (
         direction.lengthSq() > 0
     ) {
@@ -642,15 +813,11 @@ function updatePlayer(delta) {
     }
 
 
-    // --------------------------------
-    // 이동 방향
-    // --------------------------------
-
     getMovementDirection();
 
 
     // --------------------------------
-    // 카메라 앞 방향
+    // 앞 방향
     // --------------------------------
 
     const forward =
@@ -696,7 +863,7 @@ function updatePlayer(delta) {
 
 
     // --------------------------------
-    // 실제 이동
+    // 이동
     // --------------------------------
 
     const move =
@@ -733,13 +900,9 @@ function updatePlayer(delta) {
 
     else {
 
-        // 멈출 때 감속
-        playerVelocity.x *=
-            0.8;
+        playerVelocity.x *= 0.8;
 
-
-        playerVelocity.z *=
-            0.8;
+        playerVelocity.z *= 0.8;
 
     }
 
@@ -753,17 +916,17 @@ function updatePlayer(delta) {
 
 
     // --------------------------------
-    // 플레이어 이동
+    // 이동
     // --------------------------------
 
-    const deltaVelocity =
+    playerCollider.translate(
+
         playerVelocity
             .clone()
-            .multiplyScalar(delta);
+            .multiplyScalar(
+                delta
+            )
 
-
-    playerCollider.translate(
-        deltaVelocity
     );
 
 
@@ -787,12 +950,13 @@ function updatePlayer(delta) {
             result.normal.y > 0;
 
 
-        // 충돌한 만큼 밀어내기
         playerCollider.translate(
+
             result.normal
                 .multiplyScalar(
                     result.depth
                 )
+
         );
 
 
@@ -805,7 +969,8 @@ function updatePlayer(delta) {
                 playerVelocity.y < 0
             ) {
 
-                playerVelocity.y = 0;
+                playerVelocity.y =
+                    0;
 
             }
 
@@ -815,15 +980,14 @@ function updatePlayer(delta) {
         // 벽
         else {
 
-            const normal =
-                result.normal;
-
-
             playerVelocity.addScaledVector(
-                normal,
-                -normal.dot(
+
+                result.normal,
+
+                -result.normal.dot(
                     playerVelocity
                 )
+
             );
 
         }
@@ -832,26 +996,12 @@ function updatePlayer(delta) {
 
 
     // --------------------------------
-    // 카메라
-    // --------------------------------
-
-    camera.position.copy(
-        playerCollider.end
-    );
-
-
-    // --------------------------------
-    // 혹시 떨어졌다면 복귀
+    // 추락 방지
     // --------------------------------
 
     if (
         playerCollider.end.y < -10
     ) {
-
-        console.log(
-            "플레이어 리셋!"
-        );
-
 
         playerCollider.start.set(
             0,
@@ -877,12 +1027,16 @@ function updatePlayer(delta) {
         playerOnFloor =
             false;
 
-
-        camera.position.copy(
-            playerCollider.end
-        );
-
     }
+
+
+    // --------------------------------
+    // 카메라 위치
+    // --------------------------------
+
+    camera.position.copy(
+        playerCollider.end
+    );
 
 }
 
