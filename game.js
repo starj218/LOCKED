@@ -120,18 +120,17 @@ const playerCollider = new Capsule(
     new THREE.Vector3(
         0,
         0.35,
-        5
+        0
     ),
 
     new THREE.Vector3(
         0,
         1.7,
-        5
+        0
     ),
 
     0.35
 );
-
 // 플레이어 속도
 const playerVelocity = new THREE.Vector3();
 
@@ -758,7 +757,7 @@ function updatePlayer(delta) {
 
 
         // 시작 위치로 복귀
-        playerCollider.start.set(
+playerCollider.start.set(
     0,
     0.35,
     0
@@ -769,7 +768,6 @@ playerCollider.end.set(
     1.7,
     0
 );
-
 
         playerVelocity.set(
             0,
