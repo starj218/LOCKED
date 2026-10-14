@@ -1,566 +1,378 @@
 (() => {
-  "use strict";
+"use strict";
 
-  const startScreen = document.getElementById("startScreen");
-  const startButton = document.getElementById("startButton");
-  const dialog = document.getElementById("dialog");
-  const dialogTitle = document.getElementById("dialogTitle");
-  const dialogText = document.getElementById("dialogText");
-  const dialogActions = document.getElementById("dialogActions");
-  const dialogEyebrow = document.getElementById("dialogEyebrow");
-  const closeDialogButton = document.getElementById("closeDialog");
-  const prompt = document.getElementById("interactPrompt");
-  const message = document.getElementById("message");
-  const objective = document.getElementById("objective");
-  const winScreen = document.getElementById("winScreen");
-  const restartButton = document.getElementById("restartButton");
+const $ = id => document.getElementById(id);
+const startScreen=$("startScreen"), startButton=$("startButton");
+const dialog=$("dialog"), dialogTitle=$("dialogTitle"), dialogText=$("dialogText");
+const dialogActions=$("dialogActions"), dialogEyebrow=$("dialogEyebrow");
+const closeDialog=$("closeDialog"), prompt=$("interactPrompt"), message=$("message");
+const objective=$("objective"), winScreen=$("winScreen"), restartButton=$("restartButton");
 
-  if (!window.THREE) {
-    alert("3D 라이브러리를 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.");
-    return;
-  }
+let canvas, gl, program, buffer, colorLoc, matrixLoc;
+let started=false, dialogOpen=false, won=false, pointerLocked=false, last=0;
+let yaw=0, pitch=0, vy=0, grounded=true, msgTimer=0;
+const keys=new Set();
+const player={x:0,z:4.2,y:1.65,r:.34,speed:4.8,jump:6.4,gravity:17};
+const objects=[], colliders=[], boxes=[];
+const progress={note:false,locker:false,power:false,computer:false,exit:false};
+let nearby=null;
 
-  const THREE = window.THREE;
-  let scene, camera, renderer, clock;
-  let started = false;
-  let gameWon = false;
-  let pointerLocked = false;
-  let yaw = 0;
-  let pitch = 0;
-  let verticalVelocity = 0;
-  let grounded = true;
-  let messageTimer = null;
-  let nearbyObject = null;
-  let dialogOpen = false;
+const VS=`attribute vec3 aPosition; uniform mat4 uMatrix; void main(){gl_Position=uMatrix*vec4(aPosition,1.0);}`;
+const FS=`precision mediump float; uniform vec4 uColor; void main(){gl_FragColor=uColor;}`;
 
-  const keys = new Set();
-  const colliders = [];
-  const interactables = [];
-  const roomObjects = {};
-  const player = {
-    x: 0,
-    z: 4.2,
-    radius: 0.34,
-    eyeHeight: 1.65,
-    speed: 4.8,
-    jumpSpeed: 6.4,
-    gravity: 17
-  };
+function shader(type,src){
+ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+ if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+ return s;
+}
+function initGL(){
+ canvas=document.createElement("canvas"); canvas.id="webglCanvas";
+ canvas.style.cssText="position:fixed;inset:0;width:100%;height:100%;z-index:0;display:block;background:#111d29";
+ $("game").prepend(canvas);
+ gl=canvas.getContext("webgl",{antialias:true});
+ if(!gl) throw new Error("WebGL을 지원하지 않는 브라우저입니다.");
+ program=gl.createProgram();
+ gl.attachShader(program,shader(gl.VERTEX_SHADER,VS));
+ gl.attachShader(program,shader(gl.FRAGMENT_SHADER,FS));
+ gl.linkProgram(program);
+ if(!gl.getProgramParameter(program,gl.LINK_STATUS)) throw new Error("WebGL shader link failed");
+ gl.useProgram(program);
+ colorLoc=gl.getUniformLocation(program,"uColor");
+ matrixLoc=gl.getUniformLocation(program,"uMatrix");
 
-  const progress = {
-    noteRead: false,
-    lockerOpen: false,
-    powerOn: false,
-    computerRead: false,
-    exitOpen: false
-  };
+ const v=[
+ -1,-1,-1, 1,-1,-1, 1,1,-1, -1,1,-1,
+ -1,-1,1, 1,-1,1, 1,1,1, -1,1,1
+ ];
+ const idx=[0,1,2,0,2,3, 1,5,6,1,6,2, 5,4,7,5,7,6,
+            4,0,3,4,3,7, 3,2,6,3,6,7, 4,5,1,4,1,0];
+ const verts=[];
+ for(const i of idx) verts.push(v[i*3],v[i*3+1],v[i*3+2]);
 
-  const materials = {
-    floor: new THREE.MeshStandardMaterial({ color: 0x394653, roughness: 0.9 }),
-    wall: new THREE.MeshStandardMaterial({ color: 0x647583, roughness: 0.88 }),
-    dark: new THREE.MeshStandardMaterial({ color: 0x17232d, roughness: 0.7 }),
-    metal: new THREE.MeshStandardMaterial({ color: 0x8c9ba5, metalness: 0.65, roughness: 0.35 }),
-    wood: new THREE.MeshStandardMaterial({ color: 0x705b49, roughness: 0.8 }),
-    cyan: new THREE.MeshStandardMaterial({ color: 0x43e4d0, emissive: 0x125b58, emissiveIntensity: 1.4 }),
-    red: new THREE.MeshStandardMaterial({ color: 0xff645e, emissive: 0x651713, emissiveIntensity: 0.8 }),
-    screen: new THREE.MeshStandardMaterial({ color: 0x0d2b36, emissive: 0x0b6573, emissiveIntensity: 1.1 }),
-    paper: new THREE.MeshStandardMaterial({ color: 0xf0e6c8, roughness: 1 })
-  };
+ buffer=gl.createBuffer();
+ gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+ gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(verts),gl.STATIC_DRAW);
+ const loc=gl.getAttribLocation(program,"aPosition");
+ gl.enableVertexAttribArray(loc);
+ gl.vertexAttribPointer(loc,3,gl.FLOAT,false,0,0);
+ gl.enable(gl.DEPTH_TEST);
+ gl.clearColor(.055,.09,.13,1);
+ resize();
+}
+function resize(){
+ if(!canvas)return;
+ canvas.width=Math.floor(innerWidth*devicePixelRatio);
+ canvas.height=Math.floor(innerHeight*devicePixelRatio);
+ gl.viewport(0,0,canvas.width,canvas.height);
+}
+function perspective(fov,aspect,near,far){
+ const f=1/Math.tan(fov/2), nf=1/(near-far);
+ return [f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1,
+         0,0,(2*far*near)*nf,0];
+}
+function mul(a,b){
+ const o=new Array(16);
+ for(let c=0;c<4;c++)for(let r=0;r<4;r++)
+   o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];
+ return o;
+}
+function translate(x,y,z){return [1,0,0,0,0,1,0,0,0,0,1,0,x,y,z,1];}
+function rotateY(a){const c=Math.cos(a),s=Math.sin(a);return [c,0,-s,0,0,1,0,0,s,0,c,0,0,0,0,1];}
+function rotateX(a){const c=Math.cos(a),s=Math.sin(a);return [1,0,0,0,0,c,s,0,0,-s,c,0,0,0,0,1];}
+function scale(x,y,z){return [x,0,0,0,0,y,0,0,0,0,z,0,0,0,0,1];}
 
-  function makeBox(name, size, position, material, options = {}) {
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(size[0], size[1], size[2]),
-      material
-    );
-    mesh.name = name;
-    mesh.position.set(position[0], position[1], position[2]);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-    if (options.collider) {
-      colliders.push({
-        minX: position[0] - size[0] / 2,
-        maxX: position[0] + size[0] / 2,
-        minZ: position[2] - size[2] / 2,
-        maxZ: position[2] + size[2] / 2
-      });
-    }
-    return mesh;
-  }
+function renderBox(x,y,z,sx,sy,sz,color,rot=0){
+ let model=mul(rotateY(rot),scale(sx,sy,sz));
+ model=mul(translate(x,y,z),model);
+ let view=mul(rotateX(-pitch),rotateY(-yaw));
+ view=mul(view,translate(-player.x,-player.y,-player.z));
+ const mat=mul(mul(perspective(Math.PI/3,canvas.width/canvas.height,.05,100),view),model);
+ gl.uniformMatrix4fv(matrixLoc,false,new Float32Array(mat));
+ gl.uniform4f(colorLoc,color[0],color[1],color[2],1);
+ gl.drawArrays(gl.TRIANGLES,0,36);
+}
+function addObj(id,label,x,y,z,range,action){objects.push({id,label,x,y,z,range,action});}
+function B(x,y,z,sx,sy,sz,c,collide=true){
+ const b={x,y,z,sx,sy,sz,color:c};
+ boxes.push(b);
+ if(collide)colliders.push({minX:x-sx,maxX:x+sx,minZ:z-sz,maxZ:z+sz});
+ return b;
+}
 
-  function addInteractable(id, label, position, action, range = 2.35) {
-    interactables.push({
-      id,
-      label,
-      position: new THREE.Vector3(position[0], position[1], position[2]),
-      action,
-      range
-    });
-  }
+function build(){
+ const C={
+  floor:[.23,.28,.33],wall:[.38,.45,.50],dark:[.08,.13,.17],
+  metal:[.55,.62,.65],wood:[.40,.30,.22],paper:[.88,.82,.66],
+  cyan:[.18,.9,.82],red:[.9,.18,.15],screen:[.08,.5,.58]
+ };
 
-  function addLamp(position) {
-    const lamp = new THREE.PointLight(0x8bd9ff, 35, 8, 2);
-    lamp.position.set(position[0], position[1], position[2]);
-    scene.add(lamp);
-    makeBox("lamp", [0.7, 0.08, 0.35], [position[0], position[1] + 0.12, position[2]], materials.cyan);
-  }
+ B(0,-.15,0,9,.15,7,C.floor,false);
+ B(0,2,7,9,2,.15,C.wall);
+ B(-9,2,0,.15,2,7,C.wall);
+ B(9,2,0,.15,2,7,C.wall);
+ B(-5.85,2,-7,3.15,2,.15,C.wall);
+ B(5.85,2,-7,3.15,2,.15,C.wall);
+ B(0,3.4,-7,2.7,.6,.15,C.wall);
 
-  function createRoom() {
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x111d29);
-    scene.fog = new THREE.Fog(0x111d29, 17, 34);
+ B(0,1.62,-6.78,1.55,1.62,.11,C.dark,false);
+ B(0,3.35,-6.76,1.8,.09,.2,C.metal,false);
 
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
-    camera.rotation.order = "YXZ";
+ B(-5,.95,-.2,1.35,.08,.6,C.wood);
+ B(-6.15,.47,-.65,.07,.47,.07,C.dark);
+ B(-3.85,.47,-.65,.07,.47,.07,C.dark);
+ B(-6.15,.47,.25,.07,.47,.07,C.dark);
+ B(-3.85,.47,.25,.07,.47,.07,C.dark);
+ B(-5,1.05,-.2,.28,.015,.19,C.paper,false);
+ addObj("note","책상 위 메모",-5,1.15,-.2,2.6,showNote);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.8));
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    document.getElementById("game").appendChild(renderer.domElement);
+ B(-1.3,.93,-.4,.625,.925,.375,C.metal);
+ B(-1.3,1.35,-.79,.06,.06,.03,C.red,false);
+ addObj("locker","잠긴 보관함",-1.3,1,-1,2.4,showLocker);
 
-    clock = new THREE.Clock();
+ B(3.2,1.2,-.55,.625,.825,.11,C.dark);
+ B(3.2,1.7,-.41,.09,.09,.04,C.red,false);
+ B(3.2,1.2,-.38,.09,.18,.06,C.metal,false);
+ addObj("switch","전원 스위치",3.2,1.2,-.1,2.5,showSwitch);
 
-    scene.add(new THREE.HemisphereLight(0xc5e6ff, 0x25303a, 2.1));
-    const mainLight = new THREE.DirectionalLight(0xffe7c2, 2.3);
-    mainLight.position.set(-4, 9, 5);
-    mainLight.castShadow = true;
-    mainLight.shadow.mapSize.set(1024, 1024);
-    scene.add(mainLight);
+ B(4.9,.95,3.1,.825,.07,.425,C.wood);
+ B(4.25,.47,2.8,.06,.47,.06,C.dark);
+ B(5.55,.47,2.8,.06,.47,.06,C.dark);
+ B(4.9,1.35,3,.475,.31,.06,C.dark,false);
+ B(4.9,1.37,2.925,.39,.215,.018,C.screen,false);
+ addObj("computer","컴퓨터",4.9,1.4,2.45,2.6,showComputer);
 
-    // Floor: the player's feet stay on y=0; camera is 1.65 units above it.
-    makeBox("floor", [18, 0.3, 14], [0, -0.15, 0], materials.floor);
-    // Outer walls. Front wall has an opening for the exit door.
-    makeBox("backWall", [18, 4, 0.3], [0, 2, 7], materials.wall);
-    makeBox("leftWall", [0.3, 4, 14], [-9, 2, 0], materials.wall);
-    makeBox("rightWall", [0.3, 4, 14], [9, 2, 0], materials.wall);
-    makeBox("frontWallLeft", [6.3, 4, 0.3], [-5.85, 2, -7], materials.wall);
-    makeBox("frontWallRight", [6.3, 4, 0.3], [5.85, 2, -7], materials.wall);
-    makeBox("frontWallTop", [5.4, 1.2, 0.3], [0, 3.4, -7], materials.wall);
+ B(6.9,.38,-2.5,.5,.38,.45,C.wood);
+ B(2.05,1.35,-6.5,.21,.31,.07,C.dark,false);
+ B(2.05,1.51,-6.405,.14,.08,.02,C.cyan,false);
+ addObj("exit","잠긴 출구",0,1.4,-6.05,2.7,showExit);
 
-    // Simple ceiling beams and wall lights make the room feel 3D without an external model.
-    for (let x = -6; x <= 6; x += 4) {
-      makeBox("ceilingBeam", [0.12, 0.12, 13.5], [x, 3.92, 0], materials.dark);
-    }
-    addLamp([-5, 3.45, 1.8]);
-    addLamp([0, 3.45, 1.8]);
-    addLamp([5, 3.45, 1.8]);
+ colliders.push(
+  {minX:-9.4,maxX:-8.6,minZ:-7.2,maxZ:7.2},
+  {minX:8.6,maxX:9.4,minZ:-7.2,maxZ:7.2},
+  {minX:-9,maxX:-1.8,minZ:-7.4,maxZ:-6.6},
+  {minX:1.8,maxX:9,minZ:-7.4,maxZ:-6.6},
+  {minX:-9,maxX:9,minZ:6.6,maxZ:7.4}
+ );
+}
 
-    // Door and keypad at the far end.
-    roomObjects.exitDoor = makeBox("exitDoor", [3.1, 3.25, 0.22], [0, 1.62, -6.78], materials.dark);
-    makeBox("doorFrameTop", [3.6, 0.18, 0.4], [0, 3.35, -6.76], materials.metal);
-    makeBox("doorFrameLeft", [0.18, 3.4, 0.4], [-1.7, 1.7, -6.76], materials.metal);
-    makeBox("doorFrameRight", [0.18, 3.4, 0.4], [1.7, 1.7, -6.76], materials.metal);
-    roomObjects.exitLight = makeBox("exitLight", [0.25, 0.18, 0.08], [1.15, 2.65, -6.62], materials.red);
-    makeBox("exitKeypad", [0.42, 0.62, 0.14], [2.05, 1.35, -6.5], materials.dark);
-    makeBox("exitKeypadScreen", [0.28, 0.16, 0.04], [2.05, 1.51, -6.405], materials.cyan);
-
-    // Desk and paper note. The desk is an obstacle; approach it from the front.
-    makeBox("deskTop", [2.7, 0.16, 1.2], [-5, 0.95, -0.2], materials.wood, { collider: true });
-    makeBox("deskLeg1", [0.14, 0.95, 0.14], [-6.15, 0.47, -0.65], materials.dark);
-    makeBox("deskLeg2", [0.14, 0.95, 0.14], [-3.85, 0.47, -0.65], materials.dark);
-    makeBox("deskLeg3", [0.14, 0.95, 0.14], [-6.15, 0.47, 0.25], materials.dark);
-    makeBox("deskLeg4", [0.14, 0.95, 0.14], [-3.85, 0.47, 0.25], materials.dark);
-    roomObjects.note = makeBox("note", [0.55, 0.025, 0.38], [-5, 1.05, -0.2], materials.paper);
-    addInteractable("note", "책상 위 메모", [-5, 1.25, -0.2], showNote, 2.5);
-
-    // Locker, placed with clear approach space.
-    makeBox("lockerBody", [1.25, 1.85, 0.75], [-1.3, 0.93, -0.4], materials.metal, { collider: true });
-    roomObjects.lockerLight = makeBox("lockerLight", [0.12, 0.12, 0.06], [-1.3, 1.35, -0.785], materials.red);
-    makeBox("lockerKeypad", [0.3, 0.38, 0.08], [-0.87, 1.05, -0.805], materials.dark);
-    addInteractable("locker", "잠긴 보관함", [-1.3, 1.0, -1.0], showLocker, 2.5);
-
-    // Power switch on a freestanding wall panel.
-    makeBox("switchPanel", [1.25, 1.65, 0.22], [3.2, 1.2, -0.55], materials.dark, { collider: true });
-    roomObjects.switchLight = makeBox("switchLight", [0.18, 0.18, 0.08], [3.2, 1.7, -0.41], materials.red);
-    roomObjects.switchLever = makeBox("switchLever", [0.18, 0.36, 0.12], [3.2, 1.2, -0.38], materials.metal);
-    addInteractable("switch", "전원 스위치", [3.2, 1.2, -0.1], showSwitch, 2.5);
-
-    // Computer on a small table at the back-right area.
-    makeBox("computerDesk", [1.65, 0.14, 0.85], [4.9, 0.95, 3.1], materials.wood, { collider: true });
-    makeBox("computerLeg1", [0.12, 0.95, 0.12], [4.25, 0.47, 2.8], materials.dark);
-    makeBox("computerLeg2", [0.12, 0.95, 0.12], [5.55, 0.47, 2.8], materials.dark);
-    roomObjects.monitor = makeBox("monitor", [0.95, 0.62, 0.12], [4.9, 1.35, 3.0], materials.dark);
-    roomObjects.monitorScreen = makeBox("monitorScreen", [0.78, 0.43, 0.035], [4.9, 1.37, 2.925], materials.screen);
-    addInteractable("computer", "컴퓨터", [4.9, 1.4, 2.45], showComputer, 2.6);
-
-    // A few harmless environmental props for scale.
-    makeBox("crate1", [1.0, 0.75, 0.9], [6.9, 0.38, -2.5], materials.wood, { collider: true });
-    makeBox("crate2", [0.8, 0.6, 0.75], [7.0, 0.3, -3.35], materials.dark);
-    makeBox("wallStripe", [0.06, 2.4, 0.02], [-8.78, 2, -2.0], materials.cyan);
-
-    addInteractable("exit", "잠긴 출구", [0, 1.4, -6.05], showExit, 2.7);
-
-    // Room boundary collision boxes: keeps the player inside the room.
-    colliders.push(
-      { minX: -9, maxX: 9, minZ: 6.65, maxZ: 7.5 },
-      { minX: -9.5, maxX: -8.65, minZ: -7.2, maxZ: 7.2 },
-      { minX: 8.65, maxX: 9.5, minZ: -7.2, maxZ: 7.2 },
-      { minX: -9, maxX: -1.85, minZ: -7.4, maxZ: -6.65 },
-      { minX: 1.85, maxX: 9, minZ: -7.4, maxZ: -6.65 }
-    );
-
-    camera.position.set(player.x, player.eyeHeight, player.z);
+function showMsg(t,ms=2400){
+ message.textContent=t;
+ message.classList.add("visible");
+ clearTimeout(msgTimer);
+ msgTimer=setTimeout(()=>message.classList.remove("visible"),ms);
+}
+function openDialog(title,text,actions=[],ey="INTERACTION"){
+ dialogTitle.textContent=title;
+ dialogText.textContent=text;
+ dialogEyebrow.textContent=ey;
+ dialogActions.replaceChildren(...actions);
+ dialog.classList.remove("hidden");
+ dialogOpen=true;
+ if(pointerLocked)document.exitPointerLock();
+}
+function closeD(){dialog.classList.add("hidden");dialogOpen=false;}
+function btn(t,fn,secondary=false){
+ const b=document.createElement("button");
+ b.textContent=t;
+ if(secondary)b.className="secondary-button";
+ b.onclick=fn;
+ return b;
+}
+function codeForm(correct){
+ const input=document.createElement("input");
+ input.maxLength=4;
+ input.inputMode="numeric";
+ input.placeholder="4자리 코드";
+ const b=btn("확인",()=>{
+  if(input.value.trim()===correct){
+   if(correct==="2580"){
+    progress.locker=true;
+    closeD();
+    showMsg("보관함이 열렸다! 전원 안내문을 찾았다.");
     updateObjective();
-  }
-
-  function showMessage(text, duration = 2400) {
-    message.textContent = text;
-    message.classList.add("visible");
-    clearTimeout(messageTimer);
-    messageTimer = setTimeout(() => message.classList.remove("visible"), duration);
-  }
-
-  function openDialog(title, text, actions = [], eyebrow = "INTERACTION") {
-    dialogTitle.textContent = title;
-    dialogText.textContent = text;
-    dialogEyebrow.textContent = eyebrow;
-    dialogActions.replaceChildren();
-    actions.forEach((action) => dialogActions.appendChild(action));
-    dialog.classList.remove("hidden");
-    dialogOpen = true;
-    if (document.pointerLockElement) document.exitPointerLock();
-  }
-
-  function closeDialog() {
-    dialog.classList.add("hidden");
-    dialogOpen = false;
-  }
-
-  function makeButton(label, onClick, secondary = false) {
-    const button = document.createElement("button");
-    button.textContent = label;
-    if (secondary) button.className = "secondary-button";
-    button.addEventListener("click", onClick);
-    return button;
-  }
-
-  function makeCodeForm(placeholder, onSubmit) {
-    const input = document.createElement("input");
-    input.type = "text";
-    input.inputMode = "numeric";
-    input.maxLength = 4;
-    input.placeholder = placeholder;
-    input.setAttribute("aria-label", "숫자 코드");
-    const submit = makeButton("확인", () => onSubmit(input.value.trim()));
-    input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") onSubmit(input.value.trim());
-    });
-    setTimeout(() => input.focus(), 0);
-    return [input, submit];
-  }
-
-  function showNote() {
-    progress.noteRead = true;
-    openDialog("책상 위 메모", "연구실 번호: 2580\n\n메모 아래에는 작은 글씨가 적혀 있다.\n'보관함의 번호로 사용하라.'", [
-      makeButton("확인", closeDialog)
-    ], "CLUE 01");
+   }else{
+    progress.exit=true;
+    closeD();
+    won=true;
+    objective.textContent="목표 완료: 탈출 성공!";
+    showMsg("출구 잠금이 해제되었다!",3000);
+    setTimeout(()=>winScreen.classList.remove("hidden"),600);
+   }
+  }else showMsg("번호가 맞지 않는다. 단서를 다시 확인해 보자.");
+ });
+ input.onkeydown=e=>{if(e.key==="Enter")b.click()};
+ setTimeout(()=>input.focus(),0);
+ return [input,b];
+}
+function showNote(){
+ progress.note=true;
+ openDialog("책상 위 메모",
+  "연구실 번호: 2580\n\n메모 아래에는 작은 글씨가 적혀 있다.\n'보관함의 번호로 사용하라.'",
+  [btn("확인",closeD)],"CLUE 01");
+ updateObjective();
+}
+function showLocker(){
+ if(progress.locker){
+  openDialog("보관함","이미 열려 있다.\n안내문: 전원 스위치를 켜야 컴퓨터가 작동한다.",
+   [btn("확인",closeD)]);
+  return;
+ }
+ openDialog("잠긴 보관함","4자리 비밀번호를 입력하세요.",codeForm("2580"),"LOCKER");
+}
+function showSwitch(){
+ if(!progress.locker){
+  openDialog("전원 스위치","스위치 옆에 적혀 있다.\n'보관함의 안내문을 먼저 확인하라.'",
+   [btn("확인",closeD)]);
+  return;
+ }
+ if(progress.power){
+  openDialog("전원 스위치","전원은 이미 켜져 있다. 컴퓨터를 조사해 보자.",
+   [btn("확인",closeD)]);
+  return;
+ }
+ openDialog("전원 스위치","전원 스위치를 올릴까요?",
+  [btn("전원 켜기",()=>{
+    progress.power=true;
+    closeD();
     updateObjective();
+    showMsg("전원이 복구되었다. 컴퓨터 화면이 켜졌다!");
+  }),btn("취소",closeD,true)]);
+}
+function showComputer(){
+ if(!progress.power){
+  openDialog("컴퓨터","화면이 꺼져 있다.\n먼저 전원 스위치를 켜야 한다.",
+   [btn("확인",closeD)]);
+  return;
+ }
+ progress.computer=true;
+ openDialog("연구실 컴퓨터",
+  "전원 복구 완료.\n\n최종 출구 코드: 7314\n\n출구의 암호 입력 장치에 이 번호를 입력하라.",
+  [btn("확인",closeD)],"SYSTEM MESSAGE");
+ updateObjective();
+}
+function showExit(){
+ if(!progress.computer){
+  openDialog("잠긴 출구","출구는 잠겨 있다.\n컴퓨터에서 최종 출구 코드를 확인해야 한다.",
+   [btn("확인",closeD)]);
+  return;
+ }
+ openDialog("출구 암호 장치","최종 탈출 코드 4자리를 입력하세요.",
+  codeForm("7314"),"FINAL LOCK");
+}
+function updateObjective(){
+ if(progress.exit)objective.textContent="목표 완료: 탈출 성공!";
+ else if(progress.computer)objective.textContent="목표: 출구에 7314 입력";
+ else if(progress.power)objective.textContent="목표: 컴퓨터에서 탈출 코드 확인";
+ else if(progress.locker)objective.textContent="목표: 전원 스위치 켜기";
+ else objective.textContent="목표: 메모를 찾아 보관함 열기";
+}
+function dist(o){return Math.hypot(player.x-o.x,player.z-o.z);}
+function getNear(){
+ let best=null,bd=Infinity;
+ for(const o of objects){
+  const d=dist(o);
+  if(d<o.range&&d<bd){
+   const dx=o.x-player.x,dz=o.z-player.z,len=Math.hypot(dx,dz)||1;
+   const fx=-Math.sin(yaw),fz=-Math.cos(yaw);
+   if((dx/len)*fx+(dz/len)*fz>-.15){best=o;bd=d;}
   }
+ }
+ return best;
+}
+function collide(x,z){
+ const r=player.r;
+ if(x<-8.5+r||x>8.5-r||z<-6.5+r||z>6.5-r){
+  if(!(progress.exit&&Math.abs(x)<1.7&&z<-6))return true;
+ }
+ for(const c of colliders){
+  const qx=Math.max(c.minX,Math.min(x,c.maxX));
+  const qz=Math.max(c.minZ,Math.min(z,c.maxZ));
+  const dx=x-qx,dz=z-qz;
+  if(dx*dx+dz*dz<r*r)return true;
+ }
+ if(!progress.exit&&Math.abs(x)<1.7&&z<-6.35)return true;
+ return false;
+}
+function move(dt){
+ if(!started||dialogOpen||won)return;
+ const f=(keys.has("KeyW")?1:0)-(keys.has("KeyS")?1:0);
+ const s=(keys.has("KeyD")?1:0)-(keys.has("KeyA")?1:0);
+ let mx=-Math.sin(yaw)*f+Math.cos(yaw)*s;
+ let mz=-Math.cos(yaw)*f-Math.sin(yaw)*s;
+ const l=Math.hypot(mx,mz);
+ if(l){mx/=l;mz/=l;}
+ const speed=player.speed*((keys.has("ShiftLeft")||keys.has("ShiftRight"))?1.3:1);
+ const nx=player.x+mx*speed*dt,nz=player.z+mz*speed*dt;
+ if(!collide(nx,player.z))player.x=nx;
+ if(!collide(player.x,nz))player.z=nz;
+ if(keys.has("Space")&&grounded){
+  vy=player.jump;grounded=false;keys.delete("Space");
+ }
+ vy-=player.gravity*dt;
+ player.y+=vy*dt;
+ if(player.y<=1.65){player.y=1.65;vy=0;grounded=true;}
+}
+function updatePrompt(){
+ nearby=getNear();
+ if(!started||dialogOpen||won||!nearby){prompt.classList.add("hidden");return;}
+ prompt.textContent=`[E] ${nearby.label}`;
+ prompt.classList.remove("hidden");
+}
+function interact(){
+ if(!started||dialogOpen||won)return;
+ if(nearby)nearby.action();
+ else showMsg("조사할 물건 가까이에서 E를 눌러 보자.");
+}
+function render(){
+ gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+ for(const b of boxes)renderBox(b.x,b.y,b.z,b.sx,b.sy,b.sz,b.color);
+ renderBox(3.2,1.7,-.41,.09,.09,.04,progress.power?[.18,.9,.82]:[.9,.18,.15]);
+ renderBox(-1.3,1.35,-.79,.06,.06,.03,progress.locker?[.18,.9,.82]:[.9,.18,.15]);
+ renderBox(2.05,1.51,-6.405,.14,.08,.02,[.18,.9,.82]);
+}
+function loop(t){
+ const dt=Math.min((t-last)/1000||0,.04);
+ last=t;
+ move(dt);
+ updatePrompt();
+ render();
+ requestAnimationFrame(loop);
+}
 
-  function showLocker() {
-    if (progress.lockerOpen) {
-      openDialog("보관함", "보관함은 이미 열려 있다.\n안내문: 전원 스위치를 켜야 컴퓨터가 작동한다.", [
-        makeButton("확인", closeDialog)
-      ]);
-      return;
-    }
-    openDialog("잠긴 보관함", "4자리 비밀번호를 입력하세요.", makeCodeForm("비밀번호 4자리", (code) => {
-      if (code === "2580") {
-        progress.lockerOpen = true;
-        roomObjects.lockerLight.material = materials.cyan;
-        closeDialog();
-        updateObjective();
-        showMessage("보관함이 열렸다! 안에서 전원 안내문을 찾았다.");
-        openDialog("보관함 안의 안내문", "전원 스위치를 켜야 컴퓨터가 작동한다.\n\n이제 벽의 전원 장치를 조사하자.", [
-          makeButton("확인", closeDialog)
-        ], "CLUE 02");
-      } else {
-        showMessage("번호가 맞지 않는다. 메모를 다시 확인해 보자.");
-      }
-    }), "LOCKER");
-  }
+startButton.onclick=()=>{
+ started=true;
+ startScreen.classList.add("hidden");
+ canvas.requestPointerLock?.();
+ showMsg("연구실에 들어왔다. 책상 위 메모부터 조사하자.",3200);
+};
+closeDialog.onclick=closeD;
+restartButton.onclick=()=>location.reload();
 
-  function showSwitch() {
-    if (!progress.lockerOpen) {
-      openDialog("전원 스위치", "스위치 옆에 작은 표시가 있다.\n'보관함의 안내문을 먼저 확인하라.'", [
-        makeButton("확인", closeDialog)
-      ]);
-      return;
-    }
-    if (progress.powerOn) {
-      openDialog("전원 스위치", "전원이 이미 켜져 있다. 컴퓨터를 조사해 보자.", [
-        makeButton("확인", closeDialog)
-      ]);
-      return;
-    }
-    openDialog("전원 스위치", "전원 스위치를 올릴까요?", [
-      makeButton("전원 켜기", () => {
-        progress.powerOn = true;
-        roomObjects.switchLight.material = materials.cyan;
-        roomObjects.switchLever.rotation.x = -0.45;
-        roomObjects.monitorScreen.material = materials.cyan;
-        closeDialog();
-        updateObjective();
-        showMessage("전원이 복구되었다. 컴퓨터 화면이 켜졌다!");
-      }),
-      makeButton("취소", closeDialog, true)
-    ]);
-  }
+document.addEventListener("pointerlockchange",()=>pointerLocked=document.pointerLockElement===canvas);
+document.addEventListener("mousemove",e=>{
+ if(!pointerLocked||dialogOpen||!started)return;
+ yaw-=e.movementX*.0022;
+ pitch-=e.movementY*.0022;
+ pitch=Math.max(-1.48,Math.min(1.48,pitch));
+});
+document.addEventListener("keydown",e=>{
+ if(["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code))e.preventDefault();
+ if(e.code==="Escape"&&dialogOpen){closeD();return;}
+ if(e.code==="KeyE"&&!e.repeat){interact();return;}
+ keys.add(e.code);
+});
+document.addEventListener("keyup",e=>keys.delete(e.code));
+window.addEventListener("blur",()=>keys.clear());
+window.addEventListener("resize",resize);
 
-  function showComputer() {
-    if (!progress.powerOn) {
-      openDialog("컴퓨터", "화면이 꺼져 있다.\n먼저 전원 스위치를 켜야 한다.", [
-        makeButton("확인", closeDialog)
-      ]);
-      return;
-    }
-    progress.computerRead = true;
-    roomObjects.monitorScreen.material = new THREE.MeshStandardMaterial({
-      color: 0x70f2d5,
-      emissive: 0x2ac9a8,
-      emissiveIntensity: 1.7
-    });
-    openDialog("연구실 컴퓨터", "전원 복구 완료.\n\n최종 출구 코드: 7314\n\n출구의 암호 입력 장치에 이 번호를 입력하라.", [
-      makeButton("코드 기억하기", closeDialog)
-    ], "SYSTEM MESSAGE");
-    updateObjective();
-  }
-
-  function showExit() {
-    if (progress.exitOpen) {
-      winScreen.classList.remove("hidden");
-      return;
-    }
-    if (!progress.computerRead) {
-      openDialog("잠긴 출구", "출구는 잠겨 있다.\n컴퓨터에서 최종 출구 코드를 확인해야 한다.", [
-        makeButton("확인", closeDialog)
-      ]);
-      return;
-    }
-    openDialog("출구 암호 장치", "최종 탈출 코드 4자리를 입력하세요.", makeCodeForm("탈출 코드", (code) => {
-      if (code === "7314") {
-        progress.exitOpen = true;
-        roomObjects.exitLight.material = materials.cyan;
-        roomObjects.exitDoor.position.x = 3.6;
-        roomObjects.exitDoor.rotation.y = -0.08;
-        closeDialog();
-        gameWon = true;
-        objective.textContent = "목표 완료: 탈출 성공!";
-        showMessage("출구 잠금이 해제되었다!", 3200);
-        setTimeout(() => {
-          if (gameWon) winScreen.classList.remove("hidden");
-        }, 700);
-      } else {
-        showMessage("코드가 틀렸다. 컴퓨터 화면을 다시 확인하자.");
-      }
-    }), "FINAL LOCK");
-  }
-
-  function updateObjective() {
-    if (progress.exitOpen) objective.textContent = "목표 완료: 탈출 성공!";
-    else if (progress.computerRead) objective.textContent = "목표: 출구에 7314 입력";
-    else if (progress.powerOn) objective.textContent = "목표: 컴퓨터에서 탈출 코드 확인";
-    else if (progress.lockerOpen) objective.textContent = "목표: 전원 스위치 켜기";
-    else objective.textContent = "목표: 메모를 찾아 보관함 열기";
-  }
-
-  function distanceXZ(a, b) {
-    const dx = a.x - b.x;
-    const dz = a.z - b.z;
-    return Math.sqrt(dx * dx + dz * dz);
-  }
-
-  function getNearbyInteractable() {
-    const playerPos = new THREE.Vector3(player.x, 1.2, player.z);
-    let best = null;
-    let bestDistance = Infinity;
-    for (const item of interactables) {
-      const d = distanceXZ(playerPos, item.position);
-      if (d < item.range && d < bestDistance) {
-        // Only show a prompt when the object is roughly in front of the player.
-        const toObject = new THREE.Vector3(item.position.x - player.x, 0, item.position.z - player.z).normalize();
-        const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-        if (toObject.dot(forward) > -0.05) {
-          best = item;
-          bestDistance = d;
-        }
-      }
-    }
-    return best;
-  }
-
-  function collides(x, z) {
-    const r = player.radius;
-    // Keep the feet within the floor's walkable area.
-    if (x < -8.45 + r || x > 8.45 - r || z < -6.55 + r || z > 6.55 - r) {
-      // Door opening is walkable only after it has been unlocked.
-      if (!(progress.exitOpen && Math.abs(x) < 1.55 && z < -6.0 && z > -7.0)) return true;
-    }
-
-    for (const c of colliders) {
-      const closestX = Math.max(c.minX, Math.min(x, c.maxX));
-      const closestZ = Math.max(c.minZ, Math.min(z, c.maxZ));
-      const dx = x - closestX;
-      const dz = z - closestZ;
-      if (dx * dx + dz * dz < r * r) return true;
-    }
-    // Keep the closed door solid.
-    if (!progress.exitOpen && Math.abs(x) < 1.55 && z < -6.45) return true;
-    return false;
-  }
-
-  function updateMovement(delta) {
-    if (!started || dialogOpen || gameWon) return;
-
-    const forwardInput = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0);
-    const sideInput = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0);
-
-    let moveX = -Math.sin(yaw) * forwardInput + Math.cos(yaw) * sideInput;
-    let moveZ = -Math.cos(yaw) * forwardInput - Math.sin(yaw) * sideInput;
-    const length = Math.hypot(moveX, moveZ);
-    if (length > 0) {
-      moveX /= length;
-      moveZ /= length;
-    }
-
-    const sprint = keys.has("ShiftLeft") || keys.has("ShiftRight");
-    const speed = player.speed * (sprint ? 1.35 : 1);
-    const nextX = player.x + moveX * speed * delta;
-    const nextZ = player.z + moveZ * speed * delta;
-
-    // Resolve X and Z separately so the player can slide along walls naturally.
-    if (!collides(nextX, player.z)) player.x = nextX;
-    if (!collides(player.x, nextZ)) player.z = nextZ;
-
-    if ((keys.has("Space")) && grounded) {
-      verticalVelocity = player.jumpSpeed;
-      grounded = false;
-    }
-    verticalVelocity -= player.gravity * delta;
-    let nextY = camera.position.y + verticalVelocity * delta;
-    if (nextY <= player.eyeHeight) {
-      nextY = player.eyeHeight;
-      verticalVelocity = 0;
-      grounded = true;
-    }
-    camera.position.set(player.x, nextY, player.z);
-    camera.rotation.set(pitch, yaw, 0, "YXZ");
-  }
-
-  function updatePrompt() {
-    if (!started || dialogOpen || gameWon) {
-      prompt.classList.add("hidden");
-      nearbyObject = null;
-      return;
-    }
-    nearbyObject = getNearbyInteractable();
-    if (nearbyObject) {
-      prompt.textContent = `[E] ${nearbyObject.label}`;
-      prompt.classList.remove("hidden");
-    } else {
-      prompt.classList.add("hidden");
-    }
-  }
-
-  function interact() {
-    if (!started || dialogOpen || gameWon) return;
-    if (!nearbyObject) {
-      showMessage("조사할 물건 가까이에서 E를 눌러 보자.");
-      return;
-    }
-    nearbyObject.action();
-  }
-
-  function resetGame() {
-    progress.noteRead = false;
-    progress.lockerOpen = false;
-    progress.powerOn = false;
-    progress.computerRead = false;
-    progress.exitOpen = false;
-    player.x = 0;
-    player.z = 4.2;
-    verticalVelocity = 0;
-    grounded = true;
-    yaw = 0;
-    pitch = 0;
-    gameWon = false;
-    started = false;
-    keys.clear();
-    location.reload();
-  }
-
-  startButton.addEventListener("click", () => {
-    started = true;
-    startScreen.classList.add("hidden");
-    renderer.domElement.requestPointerLock?.();
-    showMessage("연구실에 들어왔다. 책상 위 메모부터 조사하자.", 3500);
-  });
-
-  closeDialogButton.addEventListener("click", closeDialog);
-  restartButton.addEventListener("click", resetGame);
-
-  rendererSetup();
-
-  function rendererSetup() {
-    createRoom();
-
-    document.addEventListener("pointerlockchange", () => {
-      pointerLocked = document.pointerLockElement === renderer.domElement;
-    });
-
-    renderer.domElement.addEventListener("click", () => {
-      if (started && !dialogOpen && !gameWon && !pointerLocked) {
-        renderer.domElement.requestPointerLock?.();
-      }
-    });
-
-    document.addEventListener("mousemove", (event) => {
-      if (!pointerLocked || dialogOpen || !started) return;
-      yaw -= event.movementX * 0.0022;
-      pitch -= event.movementY * 0.0022;
-      pitch = Math.max(-Math.PI / 2 + 0.08, Math.min(Math.PI / 2 - 0.08, pitch));
-    });
-
-    document.addEventListener("keydown", (event) => {
-      if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code)) {
-        event.preventDefault();
-      }
-      if (event.code === "Escape" && dialogOpen) {
-        closeDialog();
-        return;
-      }
-      if (event.code === "KeyE" && !event.repeat) {
-        interact();
-        return;
-      }
-      if (event.code === "Space" && !event.repeat && started && !dialogOpen && grounded) {
-        keys.add("Space");
-        return;
-      }
-      keys.add(event.code);
-    });
-
-    document.addEventListener("keyup", (event) => {
-      keys.delete(event.code);
-    });
-
-    window.addEventListener("blur", () => keys.clear());
-    window.addEventListener("resize", () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-
-    function animate() {
-      requestAnimationFrame(animate);
-      const delta = Math.min(clock.getDelta(), 0.04);
-      updateMovement(delta);
-      updatePrompt();
-      renderer.render(scene, camera);
-    }
-    animate();
-  }
+try{
+ initGL();
+ build();
+ requestAnimationFrame(loop);
+}catch(e){
+ console.error(e);
+ startButton.disabled=true;
+ startButton.textContent="3D 초기화 실패";
+ showMsg("3D 화면을 시작하지 못했습니다. 브라우저에서 WebGL을 사용할 수 있는지 확인해 주세요.",6000);
+}
 })();
